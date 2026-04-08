@@ -1,0 +1,29 @@
+# Secrets & env
+.env
+.env.*
+*.env
+config/secrets.yaml
+google-credentials.json
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.cursor/
+.idea/
+
+# OS
+.DS_Store
