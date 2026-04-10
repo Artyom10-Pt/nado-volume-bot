@@ -84,11 +84,17 @@ class TradeXYZClient:
             return False
 
     def get_balance_usd(self) -> float | None:
-        """Returns total account value (USD). Returns None on API error."""
+        """Returns total account value across all dexs (HL perp + xyz dex).
+
+        user_state(address) without dex= returns only HL perp state.
+        xyz dex balance (where Silver/WTI positions live) is separate and must be summed.
+        """
         try:
-            state = self._info.user_state(self.wallet_address)
-            margin = state.get("marginSummary", {})
-            return float(margin.get("accountValue", 0))
+            hl_state = self._info.user_state(self.wallet_address, dex="")
+            hl_value = float(hl_state.get("marginSummary", {}).get("accountValue", 0))
+            xyz_state = self._info.user_state(self.wallet_address, dex="xyz")
+            xyz_value = float(xyz_state.get("marginSummary", {}).get("accountValue", 0))
+            return hl_value + xyz_value
         except Exception as exc:
             logger.error("tradexyz get_balance failed: %s", exc)
             return None

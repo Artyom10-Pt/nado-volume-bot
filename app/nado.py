@@ -248,11 +248,44 @@ class NadoRestClient:
         return Orderbook(bids=bids, asks=asks)
 
     async def get_subaccount_balance_usd(self, subaccount: str) -> float:
-        """Returns cross-margin health (approx USD balance)."""
+        """Returns cross-margin health (initial margin health — lower when positions open).
+        Use get_total_balance_usd for accurate reporting."""
         data = await self._query({"type": "subaccount_info", "subaccount": subaccount})
-        # healths[0].health is the most conservative (initial margin) health
         health_x18 = int(data["healths"][0]["health"])
         return health_x18 / PRICE_X18
+
+    async def get_total_balance_usd(self, subaccount: str) -> float:
+        """Returns total account equity: cross-margin equity + isolated position equity.
+
+        healths[2] = PnL health = raw equity (no margin requirement subtracted).
+        Isolated positions hold their own USDC margin + unrealized PnL in quote_balance.
+        Both must be summed for an accurate total balance.
+        """
+        data = await self._query({"type": "subaccount_info", "subaccount": subaccount})
+        healths = data.get("healths", [])
+        # healths[2] = PnL type = raw equity without margin deduction
+        if len(healths) >= 3:
+            cross_equity = int(healths[2]["health"]) / PRICE_X18
+        else:
+            cross_equity = int(healths[0]["health"]) / PRICE_X18
+
+        isolated_equity = 0.0
+        try:
+            isol_data = await self._query({"type": "isolated_positions", "subaccount": subaccount})
+            for pos in isol_data.get("isolated_positions", []):
+                # Use healths[2] (PnL health) = full equity including unrealized PnL.
+                # quote_balance.balance.amount is only the USDC cash, missing unrealized PnL.
+                pos_healths = pos.get("healths", [])
+                if len(pos_healths) >= 3:
+                    isolated_equity += int(pos_healths[2]["health"]) / PRICE_X18
+                else:
+                    # Fallback: raw quote balance if healths unavailable
+                    quote = pos.get("quote_balance", {})
+                    isolated_equity += int(quote.get("balance", {}).get("amount", 0)) / PRICE_X18
+        except Exception as exc:
+            logger.warning("get_total_balance_usd: isolated_positions failed: %s", exc)
+
+        return cross_equity + isolated_equity
 
     async def get_open_orders(self, sender: str, product_id: int) -> list[dict]:
         data = await self._query({
